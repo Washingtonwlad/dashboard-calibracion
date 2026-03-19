@@ -247,10 +247,12 @@ with st.sidebar:
         <div style='background:rgba(255,255,255,0.05);border-radius:10px;padding:0.9rem;
                     font-size:0.75rem;color:rgba(255,255,255,0.5);line-height:1.7;margin-top:0.8rem;'>
             <b style='color:rgba(255,255,255,0.75);'>Cómo usar:</b><br>
-            1. Descarga el reporte desde evaluar.com<br>
-            2. Súbelo aquí sin modificarlo<br>
-            3. Ajusta el puntaje esperado<br>
-            4. Observa el impacto en tiempo real
+            1. Descarga el reporte excel desde evaluar.com<br>
+            2. Súbelo presionando el botón "Browse Files"<br>
+            3. Obtienes el resultado del perfil actual<br>
+            4. Ajusta el puntaje esperado para recalcular cada competencia y el CAP<br>
+            5. Evalúa con los gráficos de barras si es el resultado que prefieres<br>
+            6. Con estos nuevos valores esperados puedes configurar el perfil del cargo en la plataforma
         </div>
         """, unsafe_allow_html=True)
         st.stop()
