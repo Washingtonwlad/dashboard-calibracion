@@ -182,7 +182,7 @@ def dist_rangos(series):
 
 def barra_dist(dist, height=55):
     fig = go.Figure()
-    for label in ["Adecuado", "Cercano", "Alejado"]:
+    for label in ["Alejado", "Cercano", "Adecuado"]:
         d = dist[label]
         txt = f"<b>{d['pct']}%</b>" if d["pct"] >= 8 else ""
         fig.add_trace(go.Bar(
