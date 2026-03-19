@@ -235,7 +235,11 @@ def dona_dist(dist, height=200):
 with st.sidebar:
     st.markdown(f"""
     <div style='padding:1rem 0 1.1rem;border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:1rem;'>
-        <img src='{SVG_LOGO}' style='height:20px;'>
+        <img src='{SVG_LOGO}' style='height:20px;display:block;'>
+        <div style='font-family:Nunito,sans-serif;font-size:0.95rem;font-weight:700;color:white;margin-top:0.6rem;'>Calibrador de Perfiles</div>
+        <div style='font-size:0.72rem;color:rgba(255,255,255,0.45);margin-top:0.4rem;line-height:1.5;'>
+            <span style='color:rgba(255,255,255,0.3);'>Objetivo:</span> Verificar y ajustar la exigencia del perfil de competencias de un proceso, asegurando que los estándares definidos discriminen adecuadamente entre candidatos aptos y no aptos.
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
