@@ -467,4 +467,3 @@ with st.expander("Ver tabla completa"):
         df_tabla.style.apply(color_row, axis=1).format(num_cols),
         use_container_width=True, height=400
     )
-    
