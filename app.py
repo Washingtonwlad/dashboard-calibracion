@@ -145,9 +145,18 @@ def parse_excel(file_bytes):
 
 
 def cumplimiento_sim(valor, esperado):
+    """
+    Replica la fórmula de evaluar.com:
+    - Si valor >= esperado: cumplimiento = 1.0 (100%)
+    - Si valor < esperado:  cumplimiento = 1.0 - round(abs(brecha) / 10, 2)
+      donde brecha = valor - esperado, escala base = 10
+    """
     if pd.isna(valor) or pd.isna(esperado) or esperado <= 0:
         return np.nan
-    return 1.0 if valor >= esperado else valor / esperado
+    brecha = valor - esperado
+    if brecha >= 0:
+        return 1.0
+    return 1.0 - round(abs(brecha) / 10, 2)
 
 
 def calcular(df, competencias, esperados_sim):
@@ -182,7 +191,7 @@ def dist_rangos(series):
 
 def barra_dist(dist, height=55):
     fig = go.Figure()
-    for label in ["Alejado", "Cercano", "Adecuado"]:
+    for label in ["Adecuado", "Cercano", "Alejado"]:
         d = dist[label]
         txt = f"<b>{d['pct']}%</b>" if d["pct"] >= 8 else ""
         fig.add_trace(go.Bar(
@@ -235,11 +244,7 @@ def dona_dist(dist, height=200):
 with st.sidebar:
     st.markdown(f"""
     <div style='padding:1rem 0 1.1rem;border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:1rem;'>
-        <img src='{SVG_LOGO}' style='height:20px;display:block;'>
-        <div style='font-family:Nunito,sans-serif;font-size:0.95rem;font-weight:700;color:white;margin-top:0.6rem;'>Calibrador de Perfiles</div>
-        <div style='font-size:0.72rem;color:rgba(255,255,255,0.45);margin-top:0.4rem;line-height:1.5;'>
-            <span style='color:rgba(255,255,255,0.3);'>Objetivo:</span> Verificar y ajustar la exigencia del perfil de competencias de un proceso, asegurando que los estándares definidos discriminen adecuadamente entre candidatos aptos y no aptos.
-        </div>
+        <img src='{SVG_LOGO}' style='height:20px;'>
     </div>
     """, unsafe_allow_html=True)
 
@@ -251,12 +256,10 @@ with st.sidebar:
         <div style='background:rgba(255,255,255,0.05);border-radius:10px;padding:0.9rem;
                     font-size:0.75rem;color:rgba(255,255,255,0.5);line-height:1.7;margin-top:0.8rem;'>
             <b style='color:rgba(255,255,255,0.75);'>Cómo usar:</b><br>
-            1. Descarga el reporte excel desde evaluar.com<br>
-            2. Súbelo presionando el botón "Browse Files"<br>
-            3. Obtienes el resultado del perfil actual<br>
-            4. Ajusta el puntaje esperado para recalcular cada competencia y el CAP<br>
-            5. Evalúa con los gráficos de barras si es el resultado que prefieres<br>
-            6. Con estos nuevos valores esperados puedes configurar el perfil del cargo en la plataforma
+            1. Descarga el reporte desde evaluar.com<br>
+            2. Súbelo aquí sin modificarlo<br>
+            3. Ajusta el puntaje esperado<br>
+            4. Observa el impacto en tiempo real
         </div>
         """, unsafe_allow_html=True)
         st.stop()
@@ -371,7 +374,7 @@ with col_dona:
     st.markdown("<div class='evl-card' style='display:flex;flex-direction:column;align-items:center;'>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:0.72rem;font-weight:600;color:#999;text-align:center;margin-bottom:0.3rem;'>CAP Global · n={n_total}</div>", unsafe_allow_html=True)
     st.plotly_chart(dona_dist(dist_g, height=230), use_container_width=True,
-                    config={"displayModeBar": False}, key="dona_global")
+                    config={"displayModeBar": False})
     # Stats bajo la dona
     sc1, sc2, sc3 = st.columns(3)
     for scol, label, pill in zip([sc1, sc2, sc3],
