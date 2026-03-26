@@ -99,21 +99,33 @@ section[data-testid="stSidebar"] [data-testid="stFileUploader"] p{{
 @st.cache_data
 def parse_excel(file_bytes):
     df_raw = pd.read_excel(BytesIO(file_bytes), header=None)
+
+    # ── Detectar formato ──────────────────────────────────────────────────────
+    # Formato evaluar.com nativo: celda A1 contiene "Nombre del Proceso"
+    # Formato nuevo (API/export): fila 0 contiene headers tipo "processId", "Cap", etc.
+    es_formato_nativo = str(df_raw.iloc[0, 0]).strip() == "Nombre del Proceso"
+
+    if es_formato_nativo:
+        return _parse_formato_nativo(df_raw)
+    else:
+        return _parse_formato_api(df_raw)
+
+
+def _parse_formato_nativo(df_raw):
+    """Formato estándar descargado desde evaluar.com."""
     meta = {}
     for i in range(5):
         k = str(df_raw.iloc[i, 0]).strip()
         v = str(df_raw.iloc[i, 1]).strip() if pd.notna(df_raw.iloc[i, 1]) else ""
         if k not in ["nan", ""]:
             meta[k] = v
+
     row5 = df_raw.iloc[5].tolist()
     row6 = df_raw.iloc[6].tolist()
 
-    # Detectar columnas clave dinámicamente desde el header
-    col_estado   = next((i for i, v in enumerate(row5) if str(v).strip() == "Estado"),   6)
-    col_nombres  = next((i for i, v in enumerate(row5) if str(v).strip() == "Nombres"),  3)
-    col_apellidos= next((i for i, v in enumerate(row5) if str(v).strip() == "Apellidos"),4)
-
-    # Detectar inicio de competencias: primera col con subheader "Valor" en fila 6
+    col_estado    = next((i for i, v in enumerate(row5) if str(v).strip() == "Estado"),    6)
+    col_nombres   = next((i for i, v in enumerate(row5) if str(v).strip() == "Nombres"),   3)
+    col_apellidos = next((i for i, v in enumerate(row5) if str(v).strip() == "Apellidos"), 4)
     primera_comp_col = next((i for i, v in enumerate(row6) if str(v).strip() == "Valor"), 21)
 
     competencias = {}
@@ -122,7 +134,6 @@ def parse_excel(file_bytes):
             nombre = str(val).strip()
             if nombre in ["", "Detalles del candidato", "TRUST", "Disc"]:
                 continue
-            # Verificar que la siguiente col en fila 6 sea "Valor"
             if str(row6[idx]).strip() == "Valor":
                 competencias[nombre] = {
                     "valor": idx, "esperado": idx+1, "brecha": idx+2, "cumplimiento": idx+3
@@ -142,6 +153,53 @@ def parse_excel(file_bytes):
             c[f"{comp}__esperado"] = float(row[cols["esperado"]]) if pd.notna(row[cols["esperado"]]) else np.nan
         rows.append(c)
     return pd.DataFrame(rows), competencias, meta
+
+
+def _parse_formato_api(df_raw):
+    """Formato exportado vía API: fila 0 = headers, competencias como columnas pares."""
+    # Leer con header real
+    df = df_raw.copy()
+    df.columns = df.iloc[0].tolist()
+    df = df.iloc[1:].reset_index(drop=True)
+
+    # Metadatos desde columnas
+    meta = {}
+    for col, key in [("processName", "Nombre del Proceso"),
+                     ("positionName", "Nombre del Perfil"),
+                     ("publicCompanyName", "Empresa")]:
+        if col in df.columns:
+            vals = df[col].dropna()
+            if len(vals) > 0:
+                meta[key] = str(vals.iloc[0]).strip()
+
+    # Detectar competencias: columnas que tienen su par "_expected"
+    excluir = {"personId","processId","publicCompanyName","processName",
+               "positionName","firstName","lastName","identification",
+               "createdAt","degree","Cap"}
+    competencias = {}
+    for col in df.columns:
+        if str(col).endswith("_expected") or col in excluir:
+            continue
+        exp_col = f"{col}_expected"
+        if exp_col in df.columns:
+            competencias[str(col).strip()] = {"valor_col": col, "esperado_col": exp_col}
+
+    # Construir filas
+    rows = []
+    for _, row in df.iterrows():
+        nombre = f"{str(row.get('firstName','')).strip()} {str(row.get('lastName','')).strip()}".strip()
+        cap = float(row["Cap"]) if pd.notna(row.get("Cap")) else np.nan
+        c = {"Candidato": nombre, "CAP_archivo": cap}
+        for comp, cols in competencias.items():
+            v = row.get(cols["valor_col"])
+            e = row.get(cols["esperado_col"])
+            c[f"{comp}__valor"]    = float(v) if pd.notna(v) else np.nan
+            c[f"{comp}__esperado"] = float(e) if pd.notna(e) else np.nan
+        rows.append(c)
+
+    # Convertir competencias al mismo esquema que formato nativo
+    comp_normalizado = {k: {"valor": k, "esperado": f"{k}_expected"} for k in competencias}
+    return pd.DataFrame(rows), comp_normalizado, meta
 
 
 def cumplimiento_sim(valor, esperado):
@@ -191,7 +249,7 @@ def dist_rangos(series):
 
 def barra_dist(dist, height=55):
     fig = go.Figure()
-    for label in ["Alejado", "Cercano", "Adecuado"]:
+    for label in ["Adecuado", "Cercano", "Alejado"]:
         d = dist[label]
         txt = f"<b>{d['pct']}%</b>" if d["pct"] >= 8 else ""
         fig.add_trace(go.Bar(
@@ -214,7 +272,7 @@ def barra_dist(dist, height=55):
 
 
 def dona_dist(dist, height=200):
-    labels = ["Alejado", "Cercano", "Adecuado"]
+    labels = ["Adecuado", "Cercano", "Alejado"]
     values = [dist[l]["pct"] for l in labels]
     colors = [dist[l]["color"] for l in labels]
     fig = go.Figure(go.Pie(
@@ -277,27 +335,18 @@ for comp in competencias:
         esperados_actuales[comp] = float(v.iloc[0]) if len(v) > 0 else 5.0
 
 with st.sidebar:
-    # Resetear si cambia el archivo
-    archivo_id = uploaded.name + str(uploaded.size)
-    if st.session_state.get("archivo_id") != archivo_id:
-        st.session_state["archivo_id"] = archivo_id
-        st.session_state["esperados_originales"] = esperados_actuales.copy()
-        for comp in competencias:
-            st.session_state.pop(f"sl_{comp}", None)
-
     if st.button("↩ Restaurar originales", use_container_width=True):
         for comp in competencias:
-            st.session_state[f"sl_{comp}"] = int(round(st.session_state["esperados_originales"].get(comp, 5.0)))
+            key = f"sl_{comp}"
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
 
     st.markdown("<div style='font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.35);margin:0.6rem 0 0.5rem;'>Puntaje esperado por competencia</div>", unsafe_allow_html=True)
     esperados_sim = {}
     for comp in competencias:
         act = esperados_actuales.get(comp, 5.0)
-        default = int(round(st.session_state["esperados_originales"].get(comp, act)))
-        if f"sl_{comp}" not in st.session_state:
-            st.session_state[f"sl_{comp}"] = default
-        esperados_sim[comp] = st.slider(comp, 1, 10, key=f"sl_{comp}")
+        esperados_sim[comp] = st.slider(comp, 1, 10, int(round(act)), 1, key=f"sl_{comp}")
 
     en_sim = any(abs(esperados_sim[k] - esperados_actuales.get(k, 0)) > 0.01 for k in esperados_sim)
     if en_sim:
@@ -377,7 +426,7 @@ with col_barras:
         </div>
         """, unsafe_allow_html=True)
         st.plotly_chart(barra_dist(dist_c, height=38), use_container_width=True,
-                        config={"displayModeBar": False}, key=f"barra_{comp}")
+                        config={"displayModeBar": False})
 
 with col_dona:
     st.markdown("<div class='evl-card' style='display:flex;flex-direction:column;align-items:center;'>", unsafe_allow_html=True)
