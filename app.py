@@ -191,7 +191,7 @@ def dist_rangos(series):
 
 def barra_dist(dist, height=55):
     fig = go.Figure()
-    for label in ["Adecuado", "Cercano", "Alejado"]:
+    for label in ["Alejado", "Cercano", "Adecuado"]:
         d = dist[label]
         txt = f"<b>{d['pct']}%</b>" if d["pct"] >= 8 else ""
         fig.add_trace(go.Bar(
@@ -214,7 +214,7 @@ def barra_dist(dist, height=55):
 
 
 def dona_dist(dist, height=200):
-    labels = ["Adecuado", "Cercano", "Alejado"]
+    labels = ["Alejado", "Cercano", "Adecuado"]
     values = [dist[l]["pct"] for l in labels]
     colors = [dist[l]["color"] for l in labels]
     fig = go.Figure(go.Pie(
@@ -277,18 +277,27 @@ for comp in competencias:
         esperados_actuales[comp] = float(v.iloc[0]) if len(v) > 0 else 5.0
 
 with st.sidebar:
+    # Resetear si cambia el archivo
+    archivo_id = uploaded.name + str(uploaded.size)
+    if st.session_state.get("archivo_id") != archivo_id:
+        st.session_state["archivo_id"] = archivo_id
+        st.session_state["esperados_originales"] = esperados_actuales.copy()
+        for comp in competencias:
+            st.session_state.pop(f"sl_{comp}", None)
+
     if st.button("↩ Restaurar originales", use_container_width=True):
         for comp in competencias:
-            key = f"sl_{comp}"
-            if key in st.session_state:
-                del st.session_state[key]
+            st.session_state[f"sl_{comp}"] = int(round(st.session_state["esperados_originales"].get(comp, 5.0)))
         st.rerun()
 
     st.markdown("<div style='font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.35);margin:0.6rem 0 0.5rem;'>Puntaje esperado por competencia</div>", unsafe_allow_html=True)
     esperados_sim = {}
     for comp in competencias:
         act = esperados_actuales.get(comp, 5.0)
-        esperados_sim[comp] = st.slider(comp, 1, 10, int(round(act)), 1, key=f"sl_{comp}")
+        default = int(round(st.session_state["esperados_originales"].get(comp, act)))
+        if f"sl_{comp}" not in st.session_state:
+            st.session_state[f"sl_{comp}"] = default
+        esperados_sim[comp] = st.slider(comp, 1, 10, key=f"sl_{comp}")
 
     en_sim = any(abs(esperados_sim[k] - esperados_actuales.get(k, 0)) > 0.01 for k in esperados_sim)
     if en_sim:
@@ -372,7 +381,7 @@ with col_barras:
 
 with col_dona:
     st.markdown("<div class='evl-card' style='display:flex;flex-direction:column;align-items:center;'>", unsafe_allow_html=True)
-    st.markdown(f"<div style='font-size:0.72rem;font-weight:600;color:#999;text-align:center;margin-bottom:0.3rem;'>CAP Global · n={n_total}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:0.82rem;font-weight:700;color:#555;text-align:center;margin-bottom:0.5rem;'>CAP Global · <span style='color:{C_DARK};font-size:1rem;'>n={n_total}</span></div>", unsafe_allow_html=True)
     st.plotly_chart(dona_dist(dist_g, height=230), use_container_width=True,
                     config={"displayModeBar": False})
     # Stats bajo la dona
@@ -383,8 +392,8 @@ with col_dona:
         d = dist_g[label]
         scol.markdown(
             f"<div style='text-align:center;'>"
-            f"<span class='{pill}'>{d['pct']}%</span>"
-            f"<div style='font-size:0.65rem;color:#aaa;margin-top:2px;'>{d['n']} cand.</div>"
+            f"<span class='{pill}' style='font-size:0.82rem;padding:3px 10px;'>{d['pct']}%</span>"
+            f"<div style='font-size:0.75rem;font-weight:600;color:#666;margin-top:4px;'>{d['n']} cand.</div>"
             f"</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
