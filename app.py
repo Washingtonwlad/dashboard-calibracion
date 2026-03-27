@@ -249,7 +249,7 @@ def dist_rangos(series):
 
 def barra_dist(dist, height=55):
     fig = go.Figure()
-    for label in ["Adecuado", "Cercano", "Alejado"]:
+    for label in ["Alejado", "Cercano", "Adecuado"]:
         d = dist[label]
         txt = f"<b>{d['pct']}%</b>" if d["pct"] >= 8 else ""
         fig.add_trace(go.Bar(
@@ -272,7 +272,7 @@ def barra_dist(dist, height=55):
 
 
 def dona_dist(dist, height=200):
-    labels = ["Adecuado", "Cercano", "Alejado"]
+    labels = ["Alejado", "Cercano", "Adecuado"]
     values = [dist[l]["pct"] for l in labels]
     colors = [dist[l]["color"] for l in labels]
     fig = go.Figure(go.Pie(
@@ -436,8 +436,8 @@ with col_dona:
     # Stats bajo la dona
     sc1, sc2, sc3 = st.columns(3)
     for scol, label, pill in zip([sc1, sc2, sc3],
-                                  ["Adecuado","Cercano","Alejado"],
-                                  ["pill-v","pill-n","pill-r"]):
+                                  ["Alejado","Cercano","Adecuado"],
+                                  ["pill-r","pill-n","pill-v"]):
         d = dist_g[label]
         scol.markdown(
             f"<div style='text-align:center;'>"
