@@ -426,13 +426,13 @@ with col_barras:
         </div>
         """, unsafe_allow_html=True)
         st.plotly_chart(barra_dist(dist_c, height=38), use_container_width=True,
-                        config={"displayModeBar": False})
+                        config={"displayModeBar": False}, key=f"barra_{comp}")
 
 with col_dona:
     st.markdown("<div class='evl-card' style='display:flex;flex-direction:column;align-items:center;'>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:0.82rem;font-weight:700;color:#555;text-align:center;margin-bottom:0.5rem;'>CAP Global · <span style='color:{C_DARK};font-size:1rem;'>n={n_total}</span></div>", unsafe_allow_html=True)
     st.plotly_chart(dona_dist(dist_g, height=230), use_container_width=True,
-                    config={"displayModeBar": False})
+                    config={"displayModeBar": False}, key="dona_global")
     # Stats bajo la dona
     sc1, sc2, sc3 = st.columns(3)
     for scol, label, pill in zip([sc1, sc2, sc3],
