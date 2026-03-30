@@ -338,15 +338,18 @@ with st.sidebar:
     if st.button("↩ Restaurar originales", use_container_width=True):
         for comp in competencias:
             key = f"sl_{comp}"
-            if key in st.session_state:
-                del st.session_state[key]
+            st.session_state[key] = int(round(esperados_actuales.get(comp, 5.0)))
         st.rerun()
 
     st.markdown("<div style='font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.35);margin:0.6rem 0 0.5rem;'>Puntaje esperado por competencia</div>", unsafe_allow_html=True)
+    # DESPUÉS
     esperados_sim = {}
     for comp in competencias:
-        act = esperados_actuales.get(comp, 5.0)
-        esperados_sim[comp] = st.slider(comp, 1, 10, int(round(act)), 1, key=f"sl_{comp}")
+        act = int(round(esperados_actuales.get(comp, 5.0)))
+        key = f"sl_{comp}"
+        if key not in st.session_state:
+            st.session_state[key] = act
+        esperados_sim[comp] = st.slider(comp, 1, 10, key=key)
 
     en_sim = any(abs(esperados_sim[k] - esperados_actuales.get(k, 0)) > 0.01 for k in esperados_sim)
     if en_sim:
@@ -363,6 +366,10 @@ n_total  = len(df)
 proceso  = meta.get("Nombre del Perfil", meta.get("Nombre del Proceso", ""))
 dist_g   = dist_rangos(df["CAP_global"])
 cap_prom = df["CAP_global"].mean()
+
+# ── ALERTA DE BALANCE ─────────────────────────────────────────────────────────  ← NUEVO
+pct_adecuados = dist_g["Adecuado"]["pct"]
+_mostrar_alerta = pct_adecuados > 30 or pct_adecuados < 10
 
 # ── HEADER ────────────────────────────────────────────────────────────────────
 # Metadatos con etiquetas
@@ -445,6 +452,40 @@ with col_dona:
             f"<div style='font-size:0.75rem;font-weight:600;color:#666;margin-top:4px;'>{d['n']} cand.</div>"
             f"</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
+# ── ALERTA ────────────────────────────────────────────────────────────────────
+if _mostrar_alerta:
+    if pct_adecuados > 30:
+        _alerta_msg = (
+            f"<b>Perfil posiblemente desbalanceado</b> — el porcentaje de candidatos "
+            f"Adecuados es de <b>{pct_adecuados:.1f}%</b>. Probablemente el perfil sea "
+            f"poco exigente o los candidatos estén sobreajustados al mismo."
+        )
+    else:
+        _alerta_msg = (
+            f"<b>Perfil posiblemente desbalanceado</b> — el porcentaje de candidatos "
+            f"Adecuados es de <b>{pct_adecuados:.1f}%</b>. El perfil puede ser "
+            f"demasiado exigente para el pool actual de candidatos."
+        )
+    st.markdown(f"""
+    <div style='
+        background:#fffbea;
+        border-left:4px solid #f0a500;
+        border-radius:6px;
+        padding:0.75rem 1rem;
+        margin-bottom:1rem;
+        display:flex;
+        align-items:flex-start;
+        gap:0.75rem;
+        font-size:0.82rem;
+        color:#5a4200;
+        line-height:1.55;
+    '>
+        <span style='font-size:1.1rem;margin-top:1px;flex-shrink:0;'>⚠️</span>
+        <span>{_alerta_msg}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
 
 # ── TABLA CANDIDATOS ──────────────────────────────────────────────────────────
 st.markdown("<div class='evl-section'>Detalle de candidatos</div>", unsafe_allow_html=True)
