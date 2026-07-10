@@ -3,6 +3,11 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from io import BytesIO
+import hashlib
+import re
+
+from calibrador import calcular, pesos_iguales_porcentaje
+from export_excel import crear_excel_resultados
 
 st.set_page_config(
     page_title="Calibrador de Perfiles · evaluar.com",
@@ -50,6 +55,45 @@ section[data-testid="stSidebar"] .stButton>button{{
 section[data-testid="stSidebar"] .stButton>button:hover{{
     background:rgba(255,255,255,0.22) !important;
     border-color:rgba(255,255,255,0.5) !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] input{{
+    color:{C_DARK} !important;
+    -webkit-text-fill-color:{C_DARK} !important;
+    text-align:center;
+    font-size:0.76rem !important;
+    font-weight:800;
+    padding:0 4px !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stNumberInput"]{{
+    max-width:68px;
+    margin-left:auto;
+}}
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] [data-baseweb="input"]{{
+    background:white !important;
+    min-height:30px !important;
+    height:30px !important;
+    border:1px solid rgba(255,255,255,0.55) !important;
+    border-radius:7px !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] button{{
+    display:none !important;
+}}
+section[data-testid="stSidebar"] .stDownloadButton>button,
+section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button{{
+    background:{C_ACCENT} !important;
+    color:white !important;
+    border:1px solid {C_ACCENT} !important;
+    font-weight:700 !important;
+    font-size:0.78rem !important;
+}}
+section[data-testid="stSidebar"] .stDownloadButton>button:hover,
+section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button:hover{{
+    background:#e93686 !important;
+    border-color:#e93686 !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stDownloadButton"] button:disabled{{
+    opacity:0.42 !important;
+    cursor:not-allowed !important;
 }}
 /* File uploader estilizado */
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"]{{
@@ -202,35 +246,6 @@ def _parse_formato_api(df_raw):
     return pd.DataFrame(rows), comp_normalizado, meta
 
 
-def cumplimiento_sim(valor, esperado):
-    """
-    Replica la fórmula de evaluar.com:
-    - Si valor >= esperado: cumplimiento = 1.0 (100%)
-    - Si valor < esperado:  cumplimiento = 1.0 - round(abs(brecha) / 10, 2)
-      donde brecha = valor - esperado, escala base = 10
-    """
-    if pd.isna(valor) or pd.isna(esperado) or esperado <= 0:
-        return np.nan
-    brecha = valor - esperado
-    if brecha >= 0:
-        return 1.0
-    return 1.0 - round(abs(brecha) / 10, 2)
-
-
-def calcular(df, competencias, esperados_sim):
-    df2 = df.copy()
-    cumpl_cols = []
-    for comp in competencias:
-        esp = esperados_sim[comp]
-        ccol, capcol = f"{comp}__cumpl_sim", f"{comp}__cap"
-        df2[ccol]   = df2[f"{comp}__valor"].apply(lambda v: cumplimiento_sim(v, esp))
-        df2[capcol] = df2[ccol] * 100
-        cumpl_cols.append(ccol)
-    if cumpl_cols:
-        df2["CAP_global"] = df2[cumpl_cols].mean(axis=1) * 100
-    return df2.round(3)
-
-
 def dist_rangos(series):
     s = series.dropna()
     total = len(s)
@@ -316,15 +331,20 @@ with st.sidebar:
             <b style='color:rgba(255,255,255,0.75);'>Cómo usar:</b><br>
             1. Descarga el reporte desde evaluar.com<br>
             2. Súbelo aquí sin modificarlo<br>
-            3. Ajusta el puntaje esperado<br>
+            3. Ajusta el esperado y el peso<br>
             4. Observa el impacto en tiempo real
         </div>
         """, unsafe_allow_html=True)
         st.stop()
 
-df_base, competencias, meta = parse_excel(uploaded.read())
+file_bytes = uploaded.getvalue()
+file_id = hashlib.sha1(file_bytes).hexdigest()[:10]
+df_base, competencias, meta = parse_excel(file_bytes)
 if df_base.empty:
     st.error("No se encontraron candidatos con estado TERMINADO.")
+    st.stop()
+if not competencias:
+    st.error("No se encontraron competencias en el archivo.")
     st.stop()
 
 esperados_actuales = {}
@@ -333,25 +353,63 @@ for comp in competencias:
     if col in df_base.columns:
         v = df_base[col].dropna()
         esperados_actuales[comp] = float(v.iloc[0]) if len(v) > 0 else 5.0
+pesos_iniciales = pesos_iguales_porcentaje(competencias)
 
 with st.sidebar:
-    if st.button("↩ Restaurar originales", use_container_width=True):
+    if st.button("↩ Restaurar originales", width="stretch"):
         for comp in competencias:
-            key = f"sl_{comp}"
-            st.session_state[key] = int(round(esperados_actuales.get(comp, 5.0)))
+            st.session_state[f"sl_{file_id}_{comp}"] = int(round(esperados_actuales.get(comp, 5.0)))
+            st.session_state[f"wt_{file_id}_{comp}"] = pesos_iniciales[comp]
         st.rerun()
 
-    st.markdown("<div style='font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.35);margin:0.6rem 0 0.5rem;'>Puntaje esperado por competencia</div>", unsafe_allow_html=True)
-    # DESPUÉS
+    st.markdown("<div style='font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.35);margin:0.6rem 0 0.2rem;'>Calibración por competencia</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.62rem;color:rgba(255,255,255,0.45);margin-bottom:0.5rem;'>Distribuye el peso total entre las competencias.</div>", unsafe_allow_html=True)
+    st.markdown("<div style='display:grid;grid-template-columns:1fr 68px;column-gap:0.5rem;font-size:0.58rem;color:rgba(255,255,255,0.55);margin-bottom:0.35rem;text-align:center;'><span style='text-align:right;padding-right:1rem;'>ESPERADO</span><span>PESO %</span></div>", unsafe_allow_html=True)
     esperados_sim = {}
+    pesos_sim = {}
     for comp in competencias:
         act = int(round(esperados_actuales.get(comp, 5.0)))
-        key = f"sl_{comp}"
-        if key not in st.session_state:
-            st.session_state[key] = act
-        esperados_sim[comp] = st.slider(comp, 1, 10, key=key)
+        key_esp = f"sl_{file_id}_{comp}"
+        key_peso = f"wt_{file_id}_{comp}"
+        if key_esp not in st.session_state:
+            st.session_state[key_esp] = act
+        if key_peso not in st.session_state:
+            st.session_state[key_peso] = pesos_iniciales[comp]
+        st.markdown(f"<div style='font-size:0.75rem;font-weight:600;color:white;margin-top:0.45rem;'>{comp}</div>", unsafe_allow_html=True)
+        col_esp, col_peso = st.columns([3.15, 1.0], gap="small")
+        with col_esp:
+            esperados_sim[comp] = st.slider(
+                f"Esperado · {comp}", 1, 10, key=key_esp, label_visibility="collapsed"
+            )
+        with col_peso:
+            pesos_sim[comp] = st.number_input(
+                f"Peso · {comp}", min_value=0.0, max_value=100.0, step=0.1,
+                format="%.1f", key=key_peso, label_visibility="collapsed"
+            )
 
-    en_sim = any(abs(esperados_sim[k] - esperados_actuales.get(k, 0)) > 0.01 for k in esperados_sim)
+    total_pesos = round(sum(pesos_sim.values()), 1)
+    pesos_validos = abs(total_pesos - 100.0) < 0.05
+    color_total = "#7ee2a8" if pesos_validos else "#ff8dbf"
+    texto_total = "✓ Total correcto" if pesos_validos else "Ajusta hasta 100%"
+    st.markdown(
+        f"<div style='margin:0.7rem 0 0.25rem;padding:0.45rem 0.65rem;border-radius:7px;"
+        f"background:rgba(255,255,255,0.07);display:flex;justify-content:space-between;"
+        f"font-size:0.69rem;font-weight:700;'>"
+        f"<span style='color:{color_total}!important;'>{texto_total}</span>"
+        f"<span style='color:{color_total}!important;'>{total_pesos:.1f}%</span></div>",
+        unsafe_allow_html=True,
+    )
+
+    pesos_calculo = pesos_sim if total_pesos > 0 else pesos_iniciales
+
+    cambio_esperados = any(
+        abs(esperados_sim[k] - esperados_actuales.get(k, 0)) > 0.01
+        for k in esperados_sim
+    )
+    cambio_pesos = any(
+        abs(pesos_sim[k] - pesos_iniciales[k]) > 0.05 for k in competencias
+    )
+    en_sim = cambio_esperados or cambio_pesos
     if en_sim:
         st.markdown("""
         <div style='background:rgba(255,66,152,0.12);border:1px solid rgba(255,66,152,0.3);
@@ -361,11 +419,40 @@ with st.sidebar:
         </div>""", unsafe_allow_html=True)
 
 # ── CALCULAR ──────────────────────────────────────────────────────────────────
-df       = calcular(df_base, competencias, esperados_sim)
+pesos_actuales = pesos_iniciales
+df_actual = calcular(df_base, competencias, esperados_actuales, pesos_actuales)
+df       = calcular(df_base, competencias, esperados_sim, pesos_calculo)
 n_total  = len(df)
 proceso  = meta.get("Nombre del Perfil", meta.get("Nombre del Proceso", ""))
 dist_g   = dist_rangos(df["CAP_global"])
 cap_prom = df["CAP_global"].mean()
+
+# ── DESCARGA EN SIDEBAR ──────────────────────────────────────────────────────
+nombre_base = meta.get("Nombre del Perfil") or meta.get("Nombre del Proceso") or "calibracion"
+nombre_base = re.sub(r"[^A-Za-z0-9_-]+", "-", nombre_base.strip()).strip("-").lower()
+excel_bytes = b""
+if pesos_validos:
+    excel_bytes = crear_excel_resultados(
+        meta=meta,
+        df_base=df_base,
+        df_actual=df_actual,
+        df_simulado=df,
+        competencias=competencias,
+        esperados_actuales=esperados_actuales,
+        esperados_simulados=esperados_sim,
+        pesos_simulados=pesos_sim,
+    )
+with st.sidebar:
+    st.markdown("<div style='height:1px;background:rgba(255,255,255,0.12);margin:0.75rem 0;'></div>", unsafe_allow_html=True)
+    st.download_button(
+        "⬇ Descargar análisis Excel",
+        data=excel_bytes,
+        file_name=f"calibracion-{nombre_base or 'perfil'}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        width="stretch",
+        disabled=not pesos_validos,
+        help=None if pesos_validos else "Los pesos deben sumar 100% para descargar.",
+    )
 
 # ── ALERTA DE BALANCE ─────────────────────────────────────────────────────────  ← NUEVO
 pct_adecuados = dist_g["Adecuado"]["pct"]
@@ -419,6 +506,7 @@ with col_barras:
         esp_act = esperados_actuales.get(comp, 5.0)
         esp_sim = esperados_sim.get(comp, esp_act)
         cambio  = f" → <b style='color:#ff4298;'>{esp_sim}</b>" if abs(esp_sim - esp_act) > 0.01 else ""
+        peso_mostrado = pesos_sim[comp]
 
         st.markdown(f"""
         <div style='margin-bottom:0.6rem;'>
@@ -427,18 +515,19 @@ with col_barras:
                 <span>{comp}</span>
                 <span style='font-size:0.68rem;color:#aaa;font-weight:400;'>
                     Esp: <b style='color:{C_DARK};'>{esp_act}</b>{cambio}
+                    &nbsp;·&nbsp; Peso: <b style='color:{C_DARK};'>{peso_mostrado:.1f}%</b>
                     &nbsp;·&nbsp; CAP: <b style='color:{C_DARK};'>{df[cap_col].mean():.1f}%</b>
                 </span>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        st.plotly_chart(barra_dist(dist_c, height=38), use_container_width=True,
+        st.plotly_chart(barra_dist(dist_c, height=38), width="stretch",
                         config={"displayModeBar": False}, key=f"barra_{comp}")
 
 with col_dona:
     st.markdown("<div class='evl-card' style='display:flex;flex-direction:column;align-items:center;'>", unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:0.82rem;font-weight:700;color:#555;text-align:center;margin-bottom:0.5rem;'>CAP Global · <span style='color:{C_DARK};font-size:1rem;'>n={n_total}</span></div>", unsafe_allow_html=True)
-    st.plotly_chart(dona_dist(dist_g, height=230), use_container_width=True,
+    st.plotly_chart(dona_dist(dist_g, height=230), width="stretch",
                     config={"displayModeBar": False}, key="dona_global")
     # Stats bajo la dona
     sc1, sc2, sc3 = st.columns(3)
@@ -486,13 +575,17 @@ if _mostrar_alerta:
     </div>
     """, unsafe_allow_html=True)
 
-
 # ── TABLA CANDIDATOS ──────────────────────────────────────────────────────────
 st.markdown("<div class='evl-section'>Detalle de candidatos</div>", unsafe_allow_html=True)
 with st.expander("Ver tabla completa"):
     comp_cap_cols = [f"{c}__cap" for c in competencias if f"{c}__cap" in df.columns]
     df_tabla = df[["Candidato", "CAP_archivo", "CAP_global"] + comp_cap_cols].copy()
-    rename = {"CAP_archivo": "CAP archivo (%)", "CAP_global": "CAP simulado (%)"}
+    df_tabla.insert(2, "CAP_actual", df_actual["CAP_global"])
+    rename = {
+        "CAP_archivo": "CAP archivo (%)",
+        "CAP_actual": "CAP actual (%)",
+        "CAP_global": "CAP simulado (%)",
+    }
     rename.update({c: c.replace("__cap","") for c in comp_cap_cols})
     df_tabla = df_tabla.rename(columns=rename)
     df_tabla["Clasificación"] = df_tabla["CAP simulado (%)"].apply(lambda x: clasificar(x)[0])
@@ -506,5 +599,5 @@ with st.expander("Ver tabla completa"):
     num_cols = {c: "{:.1f}" for c in df_tabla.columns if c not in ["Candidato","Clasificación"]}
     st.dataframe(
         df_tabla.style.apply(color_row, axis=1).format(num_cols),
-        use_container_width=True, height=400
+        width="stretch", height=400
     )
